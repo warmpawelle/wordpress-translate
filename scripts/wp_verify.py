@@ -5,9 +5,9 @@ Checks, per URL: HTTP status, <html lang>, link set, media set, block count,
 language-switcher coverage, residual English ratio. Read-only.
 
 Usage:
-    python wp_verify.py --base-url https://example.com --lang es --paths /,/about/,/blog/
-    python wp_verify.py --base-url https://example.com --lang es --from-sitemap
-    python wp_verify.py --base-url https://example.com --lang es --sample 3 --json out.json
+    python wp_verify.py --base-url https://example.com --segment JP --paths /,/about/,/blog/
+    python wp_verify.py --base-url https://example.com --segment JP --from-sitemap
+    python wp_verify.py --base-url https://example.com --segment JP --locale ja --json out.json
 
 Exit code 0 = all checks passed, 1 = at least one failure.
 """
@@ -92,13 +92,13 @@ def fetch(url):
         return 0, ""
 
 
-def norm_url(raw, page_url, lang):
+def norm_url(raw, page_url, segment):
     if not raw or raw.startswith(("mailto:", "tel:", "javascript:", "#")):
         return None
     absolute = urljoin(page_url, raw)
     parsed = urlparse(absolute)
     path = parsed.path or "/"
-    path = re.sub(r"^/%s(?=/|$)" % re.escape(lang), "", path) or "/"
+    path = re.sub(r"^/%s(?=/|$)" % re.escape(segment), "", path, flags=re.I) or "/"
     path = path.rstrip("/") or "/"
     params = [(k, v) for k, v in parse_qsl(parsed.query) if k not in IGNORED_PARAMS]
     return path + ("?" + urlencode(params) if params else "")
@@ -159,7 +159,15 @@ def load_paths_from_sitemap(base):
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--base-url", required=True)
-    parser.add_argument("--lang", required=True, help="target language code, e.g. es")
+    parser.add_argument(
+        "--segment",
+        required=True,
+        help="URL segment of the translation, e.g. JP or es (/JP/...)",
+    )
+    parser.add_argument(
+        "--locale",
+        help="locale for the html lang check; defaults to the lowercased segment",
+    )
     parser.add_argument("--paths", help="comma separated paths, e.g. /,/about/,/blog/")
     parser.add_argument("--from-sitemap", action="store_true")
     parser.add_argument("--sample", type=int, default=0, help="randomly keep N paths")
@@ -168,7 +176,8 @@ def main():
     args = parser.parse_args()
 
     base = args.base_url.rstrip("/")
-    lang = args.lang.strip("/")
+    segment = args.segment.strip("/")
+    locale = (args.locale or segment).lower()
 
     if args.paths:
         paths = [p.strip() or "/" for p in args.paths.split(",")]
@@ -194,13 +203,13 @@ def main():
     failures = 0
 
     print("")
-    print("verifying %d path(s) against /%s/" % (len(paths), lang))
+    print("verifying %d path(s) against /%s/ (lang=%s)" % (len(paths), segment, locale))
     print("-" * 96)
     print("%-34s %-11s %-9s %-8s %-8s %-7s %s" % ("path", "code", "lang", "links", "media", "en%", "verdict"))
 
     for path in paths:
         src_url = base + (path if path.startswith("/") else "/" + path)
-        tgt_url = base + "/" + lang + (path if path.startswith("/") else "/" + path)
+        tgt_url = base + "/" + segment + (path if path.startswith("/") else "/" + path)
 
         src_code, src_html = fetch(src_url)
         tgt_code, tgt_html = fetch(tgt_url)
@@ -220,14 +229,14 @@ def main():
             tgt.feed(tgt_html)
 
         # html lang
-        if tgt.lang and not tgt.lang.lower().startswith(lang.lower()):
+        if tgt.lang and not tgt.lang.lower().startswith(locale):
             row["problems"].append("html lang=%s" % tgt.lang)
         elif not tgt.lang:
             row["problems"].append("no html lang")
 
         # links
-        src_links = {u for u in (norm_url(h, src_url, lang) for h in src.hrefs) if u}
-        tgt_links = {u for u in (norm_url(h, tgt_url, lang) for h in tgt.hrefs) if u}
+        src_links = {u for u in (norm_url(h, src_url, segment) for h in src.hrefs) if u}
+        tgt_links = {u for u in (norm_url(h, tgt_url, segment) for h in tgt.hrefs) if u}
         link_diff = sorted(tgt_links - src_links)[:5]
         missing_links = sorted(src_links - tgt_links)[:5]
         row["extra_links"] = link_diff
@@ -295,7 +304,8 @@ def main():
 
     if args.json_out:
         with open(args.json_out, "w", encoding="utf-8") as handle:
-            json.dump({"base": base, "lang": lang, "results": results}, handle, ensure_ascii=False, indent=2)
+            json.dump({"base": base, "segment": segment, "locale": locale, "results": results},
+                      handle, ensure_ascii=False, indent=2)
         print("written: %s" % args.json_out)
 
     return 0 if failures == 0 else 1

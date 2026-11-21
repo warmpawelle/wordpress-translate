@@ -2,6 +2,15 @@
 
 每条都给命令和判定口径。跑不完就不要说“已完成”。
 
+## 变量约定
+
+下文命令里的 `SEG` 是**目录段**（`JP`、`CN`、`ES`），`LOC` 是对应的 **locale**（`ja`、`zh-Hans`、`es`）。两者不能混：`SEG` 决定 URL，`LOC` 决定语言包与 `<html lang>`。
+
+```bash
+BASE="https://example.com"
+SEG=JP ; LOC=ja
+```
+
 ## 先做基线（动任何东西之前）
 
 ```bash
@@ -45,7 +54,7 @@ diff baseline_media.tsv after_media.tsv && echo "PASS: 媒体未变"
 - `post_modified_gmt` 也在指纹里。有人手动打开原文点了一下“更新”，指纹就会变，这是真实改动信号，要查清原因，不能当误报跳过
 - 语言 term 关系变化**不在**此指纹内。这是插件必需的写入，单独记录：`SELECT COUNT(*) FROM wp_term_relationships WHERE term_taxonomy_id IN (...)` 前后对比，报告里说明
 
-## A2 `/es/` 可访问
+## A2 目标目录段可访问（`/JP/`、`/CN/`、`/ES/`）
 
 ```bash
 while read -r url; do
@@ -59,10 +68,10 @@ done < translated_urls.txt
 
 - HTTP 200
 - 无 `Location` 头指向英文页（`--max-redirs 0` 下拿到 301/302 即失败）
-- `<html lang="es">` 或 `<html lang="es-ES">`，不是 `en`
+- `<html lang>` 与语言 locale 一致：`/JP/` 应是 `ja` 或 `ja-JP`，`/CN/` 应是 `zh-CN` 或 `zh-Hans`，不是 `en`
 
 ```bash
-curl -s "$BASE/es/" | grep -o '<html[^>]*lang="[^"]*"' | head -1
+curl -s "$BASE/JP/" | grep -o '<html[^>]*lang="[^"]*"' | head -1
 ```
 
 ## A3 语言切换可用
@@ -86,11 +95,12 @@ curl -s "$BASE/about/" | grep -oE 'href="[^"]*/(es|fr|de|it|pt|nl|pl|ja|ko|zh)/[
 # 前台 URL 全集（优先用 sitemap，比遍历 post 表准）
 curl -s "$BASE/wp-sitemap.xml" | grep -oE '<loc>[^<]+</loc>' | sed 's/<[^>]*>//g' > sitemap_urls.txt
 
-# 逐个探 /es/ 版本
+# 逐个探某个语言的目录段版本（换 SEG 即可换语言）
+SEG=JP
 while read -r u; do
   path=${u#"$BASE"}
-  code=$(curl -s -o /dev/null -w "%{http_code}" "$BASE/es$path")
-  [ "$code" = "200" ] || echo "MISS $code $path"
+  code=$(curl -s -o /dev/null -w "%{http_code}" "$BASE/$SEG$path")
+  [ "$code" = "200" ] || echo "MISS $code $SEG$path"
 done < sitemap_urls.txt
 ```
 
@@ -101,7 +111,7 @@ done < sitemap_urls.txt
 抽检页：首页、最贵商品、最新文章，每种语言各 3 页。
 
 ```bash
-python scripts/wp_verify.py --base-url "$BASE" --lang es --from-sitemap --sample 3
+python scripts/wp_verify.py --base-url "$BASE" --segment JP --locale ja --from-sitemap --sample 3
 ```
 
 判定口径：
@@ -131,7 +141,7 @@ python scripts/wp_verify.py --base-url "$BASE" --lang es --from-sitemap --sample
 然后比对 `href` 集合与 `src` 集合：
 
 ```bash
-python scripts/wp_verify.py --base-url "$BASE" --lang es --from-sitemap
+python scripts/wp_verify.py --base-url "$BASE" --segment JP --locale ja --from-sitemap
 ```
 
 判定：差集为空。出现差异通常是主题把链接写死成绝对地址，或者翻译时误改了 `href`。
@@ -150,7 +160,7 @@ python scripts/wp_verify.py --base-url "$BASE" --lang es --from-sitemap
 ## A8 hreflang 互指
 
 ```bash
-curl -s "$BASE/es/about/" | grep -oE '<link[^>]+hreflang="[^"]+"[^>]*>'
+curl -s "$BASE/JP/about/" | grep -oE '<link[^>]+hreflang="[^"]+"[^>]*>'
 ```
 
 通过条件：
@@ -158,17 +168,17 @@ curl -s "$BASE/es/about/" | grep -oE '<link[^>]+hreflang="[^"]+"[^>]*>'
 - 页面含全部启用语言的 `hreflang`
 - 含 `x-default`
 - **双向**：英文页也声明了西语，西语页也声明了英文。单向声明 Google 会忽略
-- 语言代码与语言目录一致（`es` 对应 `/es/`）
+- 语言代码与目录段一一对应（`ja` 对应 `/JP/`、`zh-Hans` 对应 `/CN/`），不是所有语言共用一个段
 
 ## A9 结构不变
 
 ```bash
 # 区块数 / 短代码数
 curl -s "$BASE/about/"   | grep -c "<!-- wp:"
-curl -s "$BASE/es/about/"| grep -c "<!-- wp:"
+curl -s "$BASE/JP/about/"| grep -c "<!-- wp:"
 
 curl -s "$BASE/about/"   | grep -oE '\[/?(vc_|et_pb_|gallery|contact-form)[a-z_]*' | sort | uniq -c
-curl -s "$BASE/es/about/"| grep -oE '\[/?(vc_|et_pb_|gallery|contact-form)[a-z_]*' | sort | uniq -c
+curl -s "$BASE/JP/about/"| grep -oE '\[/?(vc_|et_pb_|gallery|contact-form)[a-z_]*' | sort | uniq -c
 ```
 
 判定：区块数、短代码种类与数量一致，差异为 0。DOM 深度差 1 级以内算通过（语言包可能引入额外的 `<span>`）。
@@ -178,7 +188,7 @@ curl -s "$BASE/es/about/"| grep -oE '\[/?(vc_|et_pb_|gallery|contact-form)[a-z_]
 - 全站抽 30 个 URL，状态码无 5xx
 - 首页 TTFB 与基线相比增幅 < 30%
 - 后台能正常打开发布文章，编辑器不报“区块包含意外内容”
-- 清除缓存后 `/es/` 仍 200（排除缓存掩盖 404）
+- 清除缓存后各目录段仍 200（排除缓存掩盖 404）
 
 ```bash
 curl -s -o /dev/null -w "ttfb=%{time_starttransfer}s code=%{http_code}\n" "$BASE/"

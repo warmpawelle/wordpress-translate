@@ -2,7 +2,7 @@
 name: "wordpress-translate"
 display_name: "WordPress 翻译"
 display_name_en: "WordPress Translate"
-description: "WordPress 站点页面翻译：生成 /es/ 等子路径多语言版本，默认 10 种语言并支持追加，不改原文、不换主题、不动 URL 结构，覆盖首页、商品页、博客与全部前台页面，并在前台输出语言切换入口。触发词：WordPress 翻译、WordPress 多语言、/es/ 子路径、网站西班牙语版、页面翻译、语言切换、多语言站点、Polylang、WPML。"
+description: "WordPress 站点页面翻译：每种语言生成独立目录（日本 /JP/、中国 /CN/、西班牙 /ES/），默认 10 种语言并支持追加，不改原文、不换主题、不动 URL 结构，覆盖首页、商品页、博客与全部前台页面，并在前台输出语言切换入口。触发词：WordPress 翻译、WordPress 多语言、/JP/ /CN/ 语言目录、多语言子路径、页面翻译、语言切换、Polylang、WPML。"
 category: "marketing"
 version: "1.0.0"
 author: "Warm Paw Elle"
@@ -12,7 +12,9 @@ author: "Warm Paw Elle"
 
 ## 这个技能做什么
 
-给一个已经上线的 WordPress 站点加多语言版本：原文一个字不动，译文作为独立的语言版本挂到 `/es/`、`/fr/` 这类子路径下，前台给出语言切换入口。
+给一个已经上线的 WordPress 站点加多语言版本：原文一个字不动，译文按语言各挂一个独立目录——日本 `/JP/`、中国 `/CN/`、西班牙 `/ES/`、德国 `/DE/`——前台给出语言切换入口。
+
+不是把所有语言堆在一个 `/es/` 下，而是**一种语言一个目录段**，每个段只服务一种语言。
 
 默认一次生成 10 种语言，用户还可以追加任意语言。覆盖首页、页面、文章、商品、分类归档、菜单、模板文案与插件文案，验收时逐项给出可复核的结果，而不是一句“已完成”。
 
@@ -22,7 +24,7 @@ author: "Warm Paw Elle"
 
 **触发**：
 
-- 用户要求给 WordPress 站点做西班牙语版，并通过 `域名/es/` 访问
+- 用户要求每种语言一个独立目录，例如日本 `/JP/`、中国 `/CN/`、西班牙 `/ES/`
 - 用户要求多语言但明确不换域名、不加子域
 - 用户要求默认生成多种语言（10 种或“主流市场全都要”），并支持后续追加
 - 用户要求在站点前台提供语言切换入口
@@ -52,19 +54,21 @@ site:
   access: wp-cli                       # wp-cli | ssh | panel | rest | manual
 
 languages:
-  primary_target: es                   # 必须生成的语言，决定 /es/ 路径
-  default_set:                         # 默认 10 种，可整组替换
-    - es
-    - fr
-    - de
-    - it
-    - pt-BR
-    - nl
-    - pl
-    - ja
-    - ko
-    - zh-Hans
-  extra: []                            # 用户追加，如 [ru, tr, ar]
+  primary_target: es                   # 必须生成的语言（locale）
+  segment_style: country               # country: /JP/ /CN/ | language: /ja/ /zh/
+  segment_case: upper                  # upper / lower，见「目录段怎么定」
+  default_set:                         # 默认 10 种，locale 与目录段一一对应
+    - { locale: es,      segment: ES, label: "Español" }
+    - { locale: fr,      segment: FR, label: "Français" }
+    - { locale: de,      segment: DE, label: "Deutsch" }
+    - { locale: it,      segment: IT, label: "Italiano" }
+    - { locale: pt-BR,   segment: PT, label: "Português" }
+    - { locale: nl,      segment: NL, label: "Nederlands" }
+    - { locale: pl,      segment: PL, label: "Polski" }
+    - { locale: ja,      segment: JP, label: "日本語" }
+    - { locale: ko,      segment: KR, label: "한국어" }
+    - { locale: zh-Hans, segment: CN, label: "中文" }
+  extra: []                            # 追加，如 [{ locale: ru, segment: RU }]
   exclude: []                          # 从默认集里剔除
 
 scope:
@@ -102,15 +106,44 @@ safety:
 | 参数 | 默认 | 说明 |
 |---|---|---|
 | `site.base_url` | 无，必填 | 猜不出来。缺失就问，不要用示例域名硬跑 |
-| `languages.primary_target` | `es` | 用户要 /es/ 就填 `es`；要别的语言改这里，路径随之变化 |
-| `languages.default_set` | 10 种 | 用户说“默认 10 种”就原样用；说“再加几个”用 `extra` 追加；说“只要西语”就置空只留 primary |
-| `languages.extra` | `[]` | 追加语言写在这里，与默认集合去重后合并 |
+| `languages.primary_target` | `es` | 必做语言，只决定优先级与抽检对象，不再决定唯一路径 |
+| `languages.default_set` | 10 种 | 每项是 `locale + segment`。说“默认 10 种”就原样用；说“再加几个”用 `extra` 追加；说“只要一种”就置空只留 primary |
+| `languages.segment_style` | `country` | `country` 取国家码（JP / CN / ES），`language` 取语言码（ja / zh / es）。同一站点只能选一种，混用会出现 `/JP/` 与 `/ja/` 两套并存 |
+| `languages.segment_case` | `upper` | 大写更贴近国家码习惯，但 WordPress 默认会把段小写化，见下节 |
+| `languages.extra` | `[]` | 追加语言写在这里，与默认集合去重后合并，`segment` 必填 |
 | `scope.post_types` | 按站点实际 | 探测到 `product` 才纳入；没有 WooCommerce 就跳过 |
 | `scope.exclude_urls` | 见上 | 购物车、结账、账户页属流程页，翻译会破坏支付与登录，默认排除 |
 | `translation.translate_slugs` | `false` | 默认不动 slug，保证 URL 结构完全一致。改 true 会引入 301 与旧链接失效，需用户明确要求 |
 | `safety.dry_run` | `true` | 第一次跑必须 dry-run，先输出待改清单 |
 
-语言代码用 WordPress locale（`pt-BR`、`zh-Hans`），语言目录段用短码（`/pt/`、`/zh/`）。两者不要混：`/es/` 是路径，`es_ES` 是 locale。
+`locale` 与 `segment` 是两件事，不能混：`zh-Hans` 是给 WordPress 的 locale（决定语言包、日期格式、货币格式），`CN` 是给访问者看的路径段。拿 locale 当目录段会得到 `/zh-hans/` 这种既不像语言也不像国家的地址。
+
+每个 segment 必须唯一。两种语言共用一个段，切过去会串内容，且无法回滚单条。
+
+### 目录段怎么定
+
+默认映射：
+
+| 语言 | locale | 目录段 | 落地地址 |
+|---|---|---|---|
+| 西班牙语 | `es` | `ES` | `example.com/ES/about/` |
+| 法语 | `fr` | `FR` | `example.com/FR/about/` |
+| 德语 | `de` | `DE` | `example.com/DE/about/` |
+| 意大利语 | `it` | `IT` | `example.com/IT/about/` |
+| 葡萄牙语 | `pt-BR` | `PT` | `example.com/PT/about/` |
+| 荷兰语 | `nl` | `NL` | `example.com/NL/about/` |
+| 波兰语 | `pl` | `PL` | `example.com/PL/about/` |
+| 日语 | `ja` | `JP` | `example.com/JP/about/` |
+| 韩语 | `ko` | `KR` | `example.com/KR/about/` |
+| 中文 | `zh-Hans` | `CN` | `example.com/CN/about/` |
+
+**大写有个坑，必须先知道**：WordPress 的语言 slug 走 `sanitize_title`，会被强制转小写，Polylang 后台填 `JP` 存下来往往是 `jp`。三种处理：
+
+1. **先按大写配，预检实测**（本技能默认做法）。逐个 `curl -I 域名/JP/`，返回 200 且不是跳转到 `/jp/` 就保留
+2. **降到小写**（`/jp/`、`/cn/`）。零成本、零维护，视觉上与 `/JP/` 差别很小，SEO 上也更稳
+3. **保住大写**。在 mu-plugin 里注册独立重写规则，把 `/JP/xxx` 映射到 `lang=ja`。代价是多一套路由、多一处缓存键，且大小写敏感的服务端会把 `/JP/` 与 `/jp/` 当成两个 URL，处理不好就是重复内容
+
+默认走第 1 条，实测不通自动落到第 2 条，并在报告里写明“配置为大写、实际生效为小写”。除非用户明确要求，不要走第 3 条——它把简单问题换成了长期维护成本。
 
 ## 处理范围
 
@@ -163,7 +196,7 @@ wp option get WPLANG
 - 已装多语言插件（Polylang / WPML / TranslatePress / Weglot）及其版本
 - WooCommerce 是否存在，商品类型是否自定义
 - 固定链接结构，是否已是目录模式
-- `/es/` 是否已被占用（已存在西语内容会冲突）
+- 目标目录段（`/JP/`、`/CN/`、`/ES/` …）是否已被占用：返回 200 说明要么已有内容，要么服务器把任何路径都兜底回首页，两种都要先查清
 - 缓存层：对象缓存、页面缓存插件、CDN
 - 残留数据：曾装过 TranslatePress 会留下 `wp_trp_*` 表，两套系统并存会互相覆盖
 
@@ -183,27 +216,44 @@ wp option get WPLANG
 
 ### 第 2 步：建语言与 URL 结构
 
-目标形态：英文留在根路径，其他语言进目录。
+目标形态：英文留在根路径，每种语言各占一个目录段，互不重叠。
 
 ```
 https://example.com/about/          ← 英文（默认语言，隐藏前缀）
-https://example.com/es/about/       ← 西语
-https://example.com/de/about/       ← 德语
+https://example.com/ES/about/       ← 西语
+https://example.com/JP/about/       ← 日语
+https://example.com/CN/about/       ← 中文
+https://example.com/KR/about/       ← 韩语
 ```
 
-要做三件事：
+要做四件事：
 
 1. URL 模式设为「目录名」（Polylang: 语言 → 设置 → URL 修改 → 目录名）
 2. 勾选「隐藏默认语言的前缀」，否则英文会变成 `/en/about/`，等于改了原站 URL
-3. 保存固定链接，刷新重写规则：`wp rewrite flush --hard`
+3. 每种语言建一条语言记录，目录段与 `default_set` 里的 `segment` 一致
+4. 保存固定链接，刷新重写规则：`wp rewrite flush --hard`
 
-建语言时语言目录段用短码，locale 用完整码：
+建语言时目录段与 locale 分开传：
 
 ```bash
-wp pll lang create "Español" es es_ES 1 ltr
-wp pll lang create "Français" fr fr_FR 2 ltr
-wp pll lang create "Deutsch" de de_DE 3 ltr
+# 命令形态：wp pll lang create "<名称>" <目录段> <locale> [<顺序>] [<方向>]
+wp pll lang create "Español"  ES es_ES 1 ltr
+wp pll lang create "日本語"    JP ja_JP 2 ltr
+wp pll lang create "中文"      CN zh_CN 3 ltr
 ```
+
+建完立刻验证目录段有没有被小写化：
+
+```bash
+for seg in ES JP CN; do
+  printf "%-4s " "$seg"
+  curl -s -o /dev/null -w "%{http_code} %{redirect_url}\n" "$BASE/$seg/"
+done
+```
+
+- `200` 且无 `redirect_url` → 目录段按配置生效
+- `301` 到 `/es/`、`/jp/` 这类小写地址（即配置 `ES` 实际生效 `es`）→ WordPress 做了小写化，按「目录段怎么定」第 2 条降到小写，别硬扛
+- `404` → 重写规则没刷或语言没建成，先查这两项
 
 `wp pll` 命令不存在时（版本差异），改用 `wp eval-file` 调插件公开函数，或走后台界面建语言。不要为了凑命令去改插件文件。
 
@@ -237,7 +287,9 @@ wp pll lang create "Deutsch" de de_DE 3 ltr
 - 分类 / 标签 / 商品分类的 term 关系（Polylang 会自动带过去，自建方案需手动映射）
 - 商品的 SKU、价格、库存、属性（这些**不翻译**，只继承）
 
-写入后立刻建立语言关联：`pll_save_post_translations(['en'=>101,'es'=>205])`。只建 post 不建关联，切换器找不到对应版本，表现为“切换后 404”。
+写入后立刻建立语言关联：`pll_save_post_translations(['en'=>101,'ja'=>205])`。只建 post 不建关联，切换器找不到对应版本，表现为“切换后 404”。
+
+译文 URL 由**语言目录段**决定，不由 slug 决定：`/JP/about/` = 语言段 `JP` + post slug `about`。想让某页出现在 `/JP/` 下，是给这篇 post 设语言，不是改它的 slug——改 slug 会连英文页地址一起改掉，直接违反 R6。
 
 商品页额外一步：Polylang 需要开启商品这个自定义类型的翻译支持，否则后台看不到译文入口。
 
@@ -252,13 +304,15 @@ wp pll lang create "Deutsch" de de_DE 3 ltr
 
 10 种语言不能平铺在页眉，移动端会挤爆。用下拉或「当前语言 + 展开」，折叠态只显示当前语言。
 
+切换器里每一项的地址必须指向**该语言自己的目录段**：日语项去 `/JP/`，中文项去 `/CN/`。如果两个语言项指向同一个段，说明语言 slug 配重了，先修配置再继续，别在模板里绕。
+
 ### 第 7 步：验收
 
 按下面的验收标准逐条跑，输出矩阵表。任何一条不过，不进第 8 步。
 
 ### 第 8 步：交付报告
 
-给出：语言 × 页面覆盖矩阵、未覆盖清单及原因、原文校验结果、遗留风险（付费插件缺口、法律页需人工复核等）、回滚方法。
+给出：语言 × 目录段 × 页面覆盖矩阵、未覆盖清单及原因、原文校验结果、遗留风险（付费插件缺口、法律页需人工复核等）、回滚方法。
 
 ## 约束规则
 
@@ -271,7 +325,7 @@ wp pll lang create "Deutsch" de de_DE 3 ltr
 | R3 | 媒体不变 | 附件 ID、`_wp_attached_file`、文件 URL、`srcset`、尺寸全部不变，不上传替换图，不改文件名 |
 | R4 | 链接地址不变 | 译文页所有 `href` 去掉语言前缀后，与英文页 `href` 集合完全相等 |
 | R5 | 跳转目标不变 | canonical、表单 `action`、按钮目标地址归一化后一致；不新增重定向 |
-| R6 | 路由不变 | 译文 URL = `/<lang>/` + 英文 URL 路径，逐字符相同；slug 不加后缀、不改写 |
+| R6 | 路由不变 | 译文 URL = `/<该语言目录段>/` + 英文 URL 路径，逐字符相同；slug 不加后缀、不改写；各语言目录段互不相同，禁止全部语言共用一个前缀 |
 | R7 | URL 参数不变 | `?utm_`、`?filter=`、`?orderby=`、`?s=` 等查询串原样保留 |
 | R8 | 页面结构不变 | 区块顺序、区块数量、短代码及其属性、小工具树、DOM 层级与英文页一致 |
 | R9 | 只翻可见文本 | 只改文本节点与 `alt` / `title` / `aria-label` / `placeholder`；`class`、`id`、`data-*`、`style`、JSON-LD 的 `@type` / `@id` 一律不动 |
@@ -301,12 +355,12 @@ wp pll lang create "Deutsch" de de_DE 3 ltr
 | 编号 | 验收项 | 通过条件 | 方法 |
 |---|---|---|---|
 | A1 | 原文零改动 | 全部原 post 的标题 / 正文 / 摘要 / slug / 修改时间哈希与基线一致，差异数 = 0 | 快照 diff |
-| A2 | `/es/` 可访问 | 每个译文 URL 返回 200，不是 301/302 跳回英文页，`<html lang="es">` 正确 | 全量 `curl -I` |
+| A2 | 目标目录段可访问 | `/JP/`、`/CN/`、`/ES/` 等逐个返回 200，不是 301/302 跳回英文页或跳成小写分身，`<html lang>` 与 locale 一致 | 全量 `curl -I` |
 | A3 | 切换可用 | 每页存在切换器且包含全部启用语言；点过去再点回来，落地页正确；切换后 404 数 = 0 | 冒烟脚本逐页点 |
 | A4 | 覆盖完整 | sitemap 内前台 URL 的译文覆盖率 100%，白名单（结账等）单独列出 | 覆盖率脚本 |
 | A5 | 无残留英文 | 译文页可见文本英文句占比 < 2%，无 `translation missing`、无未回填占位符、无裸 token | 抽样 + 正则 |
 | A6 | 链接与媒体不变 | 归一化后 `href` / `src` 集合差集为空 | 逐页 diff |
-| A7 | 语言齐全 | 10 种默认语言 + 用户追加语言全部建成；每种抽检首页 / 商品 / 文章各 1 | 语言 × 页面矩阵 |
+| A7 | 语言齐全 | 10 种默认语言 + 用户追加语言全部建成，且每种语言的目录段唯一；每种抽检首页 / 商品 / 文章各 1 | 语言 × 目录段 × 页面矩阵 |
 | A8 | hreflang 互指 | 每页含全部语言 + `x-default`，双向互指，无单向声明 | 解析 `<head>` |
 | A9 | 结构不变 | 区块数、短代码数、DOM 层级深度与英文页一致 | DOM 计数 |
 | A10 | 站点不退化 | 无 5xx；首页 TTFB 增幅 < 30%；后台可正常编辑原内容 | 巡检 + 后台抽查 |
@@ -321,16 +375,18 @@ wp pll lang create "Deutsch" de de_DE 3 ltr
 
 1. `preflight.json`：环境探测结果
 2. `strings.json`：抽取的待译文案与来源定位
-3. 语言 × 页面覆盖矩阵（Markdown 表）
+3. 语言 × 目录段 × 页面覆盖矩阵（Markdown 表）
 4. 验收报告 A1–A10，逐项给通过/不通过 + 证据
 5. 缺口清单：哪些文案没翻、为什么、要补需要什么代价
 6. 回滚步骤：删哪些 post ID、恢复哪些选项、清哪些缓存
+7. 目录段实测表：配置值 / 实际生效值 / 是否发生小写化
 
 ## 失败模式与降级
 
 | 现象 | 原因 | 处置 |
 |---|---|---|
-| `/es/` 404 | 重写规则未刷新 / 缓存未清 | `wp rewrite flush --hard`，清页面缓存与 CDN，再测 |
+| `/JP/` 这类大写段 404 | WordPress 把小写化后的 slug 存了库，或重写规则未刷新 | 先 `wp rewrite flush --hard`；仍 404 就降到小写并在报告注明 |
+| `/JP/` 301 到 `/jp/` | `sanitize_title` 强制小写 | 接受小写；硬要大写需 mu-plugin 独立重写，评估成本后再做 |
 | 切换后回到英文 | 只建了 post 没建语言关联 | 补 `pll_save_post_translations`，重建关联 |
 | 译文页链接全丢语言前缀 | 主题硬编码了相对路径或用 `home_url()` 拼绝对地址 | 用 `pll_home_url()` 或 `product.url` 类接口，改子主题，不改父主题 |
 | 页面模板文案仍是英文 | 主题字符串没注册，也不在语言包里 | 用 Loco Translate 生成 `es_ES.mo`；仍不行则子主题覆盖，列入缺口 |

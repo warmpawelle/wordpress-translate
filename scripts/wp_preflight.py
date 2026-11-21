@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Read-only preflight for a WordPress site before adding /es/ style languages.
+"""Read-only preflight for a WordPress site before adding per-language directories (/JP/, /CN/, /ES/ ...).
 
 Collects what the site actually is: WP version hints, active theme, plugin
 slugs, post types, permalink shape, sitemap size, multilingual plugin state,
@@ -136,6 +136,11 @@ def permalink_shape(link):
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--base-url", required=True)
+    parser.add_argument(
+        "--segments",
+        default="es",
+        help="comma separated URL segments to probe, e.g. ES,JP,CN",
+    )
     parser.add_argument("--json", dest="json_out")
     args = parser.parse_args()
 
@@ -210,14 +215,26 @@ def main():
     report["checks"]["multilingual_detected"] = ml
     report["checks"]["hreflangs_on_home"] = fp.get("hreflangs", [])
 
-    # --- target prefix collision ----------------------------------------
-    prefix_code = fetch(site(base, "/es/"))[0]
-    report["checks"]["/es/ status"] = prefix_code
-    if prefix_code == 200:
-        report["warnings"].append(
-            "/es/ already returns 200. Either Spanish content exists already, "
-            "or the server rewrites everything to the home page. Inspect before adding languages."
-        )
+    # --- target segment collision ---------------------------------------
+    # Each language owns one directory segment (/JP/, /CN/, /ES/ ...).
+    segments = {}
+    for seg in args.segments.split(","):
+        seg = seg.strip().strip("/")
+        if not seg:
+            continue
+        code_seg, headers_seg, _ = fetch(site(base, "/%s/" % seg))
+        location = headers_seg.get("Location") or headers_seg.get("location")
+        segments[seg] = {"status": code_seg, "location": location}
+        if code_seg == 200 and not location:
+            report["warnings"].append(
+                "/%s/ returns 200. Either content already exists there, or the server "
+                "rewrites unknown paths to the home page. Inspect before adding languages." % seg
+            )
+        elif location and seg.upper() != seg and location.rstrip("/").endswith("/" + seg.lower()):
+            report["warnings"].append(
+                "/%s/ redirects to %s: WordPress lowercases language slugs." % (seg, location)
+            )
+    report["checks"]["segments"] = segments
 
     if counts.get("product"):
         report["ok"].append("WooCommerce-style product post type present (%s items)" % counts["product"])
@@ -253,7 +270,9 @@ def main():
         ))
         print("Multilingual     : %s" % (json.dumps(ml) if ml else "none detected"))
         print("hreflang on home : %s" % (", ".join(fp.get("hreflangs") or []) or "none"))
-        print("/es/ status      : HTTP %s" % prefix_code)
+        for seg, info in report["checks"].get("segments", {}).items():
+            extra = (" -> %s" % info["location"]) if info.get("location") else ""
+            print("%-17s: HTTP %s%s" % ("/" + seg + "/", info["status"], extra))
         print("Cache headers    : %s" % (json.dumps(cache_headers) if cache_headers else "none"))
     print("-" * 64)
     for line in report["ok"]:
